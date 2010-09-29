@@ -99,9 +99,6 @@ class Application():
         self.collection = ''
         self.user = ''
 
-    def get_user(self):
-        eid = askstring('enter your EID','EID')
-
     def login_user(self):
         eid = askstring('enter your EID','EID')
         password = askstring('enter your Web Service Key','Web Service Key')
@@ -128,17 +125,25 @@ class Application():
 
         json_colls = response.read()
         pycolls = json.loads(json_colls)
-        self.pycolls = pycolls
+
+        colls = []
+        self.coll_lookup = {}
+        for c in pycolls:
+            tup = (c,pycolls[c]['collection_name'],pycolls[c]['collection_name'].lower())
+            colls.append(tup)
+            self.coll_lookup[c] = tup[1]
+        colls.sort(key=itemgetter(2))
+           
         filemenu = Menu(self.menu)
         self.menu.add_cascade(label="Collections", menu=filemenu)
-        for c in pycolls:
-            filemenu.add_command(label=pycolls[c]['collection_name'], command=lambda col=c: self.set_collection(col))
+        for coll in colls:
+            filemenu.add_command(label=coll[1], command=lambda co=coll[0]: self.set_collection(co))
         self.write("Select a collection from the \"Collections\" menu above",True)
         self.user = eid
                 
     def set_collection(self,ascii_id):
         self.collection = ascii_id
-        self.write("Use the \"Open...\" command in the \"File\" menu \nto select a directory of files to upload to \nthe  * "+self.pycolls[ascii_id]['collection_name']+" *  Collection\n",True)
+        self.write("Use the \"Open...\" command in the \"File\" menu \nto select a directory of files to upload to \nthe  * "+self.coll_lookup[ascii_id]+" *  Collection\n",True)
 
     def write(self,text,delete_text=False):
         if delete_text:
