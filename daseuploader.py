@@ -1,24 +1,50 @@
-from tkFileDialog import askdirectory      
-from tkSimpleDialog import askstring
 try:
     import json
 except:
     import simplejson as json
-from Tkinter import * 
-import copy
-import os
-import time
-import urllib
-import urllib2
-import httplib
-import mimetypes
-import tkFont 
 from operator import itemgetter, attrgetter
 from random import randint
+from tkFileDialog import askdirectory      
+from tkFileDialog import askopenfilename      
+from Tkinter import * 
+from tkSimpleDialog import askstring
+import base64
+import copy
+import httplib
+import md5
+import mimetypes
+import os
+import string
+import time
+import tkFont 
+import tkSimpleDialog
+import urllib
+import urllib2
 
 VERSION = "DASe Uploader v.1.0"
 
-MIMETYPES = ['image/jpeg','image/tiff','image/gif']
+MIMETYPES = [
+        'application/msword',
+        'application/ogg',
+        'application/pdf',
+        'application/xml',
+        'application/xslt+xml',
+        'audio/mpeg',
+        'audio/mpg',
+        'audio/ogg',
+        'image/gif',
+        'image/jpeg',
+        'image/png',
+        'image/tiff',
+        'text/css',
+        'text/html',
+        'text/plain',
+        'text/xml',
+        'video/mp4',
+        'video/ogg',
+        'video/quicktime',
+        ];
+
 
 ABOUT_TEXT = """
 about text and licensing here.
@@ -83,18 +109,16 @@ class Application():
 
         filemenu = Menu(menu)
         menu.add_cascade(label="File", menu=filemenu)
-        filemenu.add_command(label="Open...", command=self.get_data_file)
+        filemenu.add_command(label="Login", command=self.login_user)
+        filemenu.add_command(label="Select Directory...", command=self.get_directory)
         filemenu.add_separator()
         filemenu.add_command(label="Exit", command=root.quit)
 
         self.clear_button = Button(frame, text="Clear",command=self.clear)
         self.clear_button.pack(side=RIGHT)
 
-        self.login_button = Button(frame, text="Login",command=self.login_user)
-        self.login_button.pack(side=LEFT)
-
         #self.write("use the \"File\" menu to select a directory")
-        self.write("Please login (see \"Login\" button below)")
+        self.write("Please login\n")
         self.frame = frame
         self.collection = ''
         self.user = ''
@@ -132,7 +156,7 @@ class Application():
             if 'admin' == pycolls[c]['auth_level']:
                 tup = (c,pycolls[c]['collection_name'],pycolls[c]['collection_name'].lower())
                 colls.append(tup)
-        self.coll_lookup[c] = tup[1]
+                self.coll_lookup[c] = tup[1]
         colls.sort(key=itemgetter(2))
            
         filemenu = Menu(self.menu)
@@ -141,10 +165,11 @@ class Application():
             filemenu.add_command(label=coll[1], command=lambda co=coll[0]: self.set_collection(co))
         self.write("Select a collection from the \"Collections\" menu above",True)
         self.user = eid
+        self.password = password 
                 
     def set_collection(self,ascii_id):
         self.collection = ascii_id
-        self.write("Use the \"Open...\" command in the \"File\" menu \nto select a directory of files to upload to \nthe  * "+self.coll_lookup[ascii_id]+" *  Collection\n",True)
+        self.write("Use the \"Select Directory...\" command in the \"File\" menu \nto select a directory of files to upload to \nthe  * "+self.coll_lookup[ascii_id]+" *  Collection\n",True)
 
     def write(self,text,delete_text=False):
         if delete_text:
@@ -155,7 +180,42 @@ class Application():
     def clear(self):
         self.report.settext('')
 
-    def get_data_file(self):
+    def checkMd5(self,coll,md5):
+        h = self.getHTTP() 
+        h.request("GET",DASE_BASE.rstrip('/')+'/collection/'+coll+'/items/by/md5/'+md5+'.txt')  
+        r = h.getresponse()
+        if 200 == r.status:
+            self.write(r.read())
+            return True
+        else:
+            return False
+
+    def postFile(self,path,filename,DASE_HOST,coll,mime_type,u,p):
+        auth = 'Basic ' + string.strip(base64.encodestring(u + ':' + p))
+        f = file(path.rstrip('/')+'/'+filename, "rb")
+        self.body = f.read()                                                                     
+        h = self.getHTTP()
+        headers = {
+            "Content-Type":mime_type,
+            "Content-Length":str(len(self.body)),
+            "Authorization":auth,
+            "Slug":filename,
+        };
+
+        md5sum = md5.new(self.body).hexdigest()
+        if not self.checkMd5(coll,md5sum):
+            h.request("POST",DASE_BASE.rstrip('/')+'/media/'+coll,self.body,headers)
+            r = h.getresponse()
+            return (r.status)
+
+    def getHTTP(self):
+        if ('https' == PROTOCOL):
+            h = httplib.HTTPSConnection(DASE_HOST,443)
+        else:
+            h = httplib.HTTPConnection(DASE_HOST,80)
+        return h
+
+    def get_directory(self):
         self.clear()
         if not self.user:
             self.write('ERROR: please Login\n',True)
@@ -164,18 +224,18 @@ class Application():
             self.write('ERROR: please select a collection\n',True)
             return
         self.write('processing file...')
-        dirpath = askdirectory(title="Select A Folder")
+        home = os.getenv('USERPROFILE') or os.getenv('HOME')
+        dirpath = askdirectory(initialdir=home,title="Select A Folder")
         for f in os.listdir(dirpath):
-            if not os.path.isfile(f):
-                (mime_type,enc) = mimetypes.guess_type(dirpath+f)
-                if mime_type and mime_type in MIMETYPES:
-                    self.write(mime_type)
-                    self.write("uploading "+f)
-                #status = self.postFile(path,f,DASE_HOST,self.coll,mime_type,u,p)
-#                if (201 == status):
-#                    self.write("server says... "+str(status)+" OK!!\n")
-#                else:
-#                    self.write("problem with "+f+"("+str(status)+")\n")
+            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
+            if mime_type and mime_type in MIMETYPES:
+                self.write(mime_type)
+                self.write("uploading "+f)
+                status = self.postFile(dirpath,f,DASE_HOST,self.collection,mime_type,self.user,self.password)
+                if (201 == status):
+                    self.write("server says... "+str(status)+" OK!!\n")
+                else:
+                    self.write("problem with "+f+"("+str(status)+")\n")
 
 if __name__ == "__main__":
     root = Tk()
