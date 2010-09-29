@@ -129,9 +129,10 @@ class Application():
         colls = []
         self.coll_lookup = {}
         for c in pycolls:
-            tup = (c,pycolls[c]['collection_name'],pycolls[c]['collection_name'].lower())
-            colls.append(tup)
-            self.coll_lookup[c] = tup[1]
+            if 'admin' == pycolls[c]['auth_level']:
+                tup = (c,pycolls[c]['collection_name'],pycolls[c]['collection_name'].lower())
+                colls.append(tup)
+        self.coll_lookup[c] = tup[1]
         colls.sort(key=itemgetter(2))
            
         filemenu = Menu(self.menu)
