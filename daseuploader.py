@@ -1,4 +1,5 @@
 from tkFileDialog import askdirectory      
+from tkSimpleDialog import askstring
 try:
     import json
 except:
@@ -7,6 +8,9 @@ from Tkinter import *
 import copy
 import os
 import time
+import urllib
+import urllib2
+import httplib
 import mimetypes
 import tkFont 
 from operator import itemgetter, attrgetter
@@ -22,6 +26,10 @@ about text and licensing here.
 HELP_TEXT = """
 DASe Uploader Help text here
 """
+
+DASE_HOST = 'daseupload.laits.utexas.edu'
+DASE_BASE = '/'
+PROTOCOL = 'https'
 
 def rfc3339():
     """ Format a date the way Atom likes it (RFC3339)
@@ -57,21 +65,6 @@ class ScrolledText(Frame):
     def gettext(self):                                   # returns a string
         return self.text.get('1.0', END+'-1c')           # first through last
 
-class AutoScrollbar(Scrollbar):
-    # a scrollbar that hides itself if it's not needed.  only
-    # works if you use the grid geometry manager.
-    def set(self, lo, hi):
-        if float(lo) <= 0.0 and float(hi) >= 1.0:
-            # grid_remove is currently missing from Tkinter!
-            self.tk.call("grid", "remove", self)
-        else:
-            self.grid()
-        Scrollbar.set(self, lo, hi)
-    def pack(self, **kw):
-        raise TclError, "cannot use pack with this widget"
-    def place(self, **kw):
-        raise TclError, "cannot use place with this widget"
-
 class Application():
     def __init__(self, master):
 
@@ -79,12 +72,13 @@ class Application():
         frame.pack(fill=BOTH,padx=2,pady=2)
 
         self.f1 = tkFont.Font(family="arial", size = "14", weight = "bold")
-        self.titleLabel = Label(frame, width=38, padx = '3', pady = '3', font = self.f1, text = (VERSION),anchor=W)
+        self.titleLabel = Label(frame, width=66, padx = '3', pady = '3', font = self.f1, text = (VERSION),anchor=W)
         self.titleLabel.pack()
 
         self.report = ScrolledText(frame)
 
         menu = Menu(frame)
+        self.menu = menu
         root.config(menu=menu)
 
         filemenu = Menu(menu)
@@ -96,19 +90,55 @@ class Application():
         self.clear_button = Button(frame, text="Clear",command=self.clear)
         self.clear_button.pack(side=RIGHT)
 
-        self.iterations = 1
+        self.login_button = Button(frame, text="Login",command=self.login_user)
+        self.login_button.pack(side=LEFT)
 
-        filemenu = Menu(menu)
-        menu.add_cascade(label="Iterations", menu=filemenu)
-        filemenu.add_command(label="1", command=lambda: self.set_iterations(1))
-        filemenu.add_command(label="10", command=lambda: self.set_iterations(10))
-        filemenu.add_command(label="100", command=lambda: self.set_iterations(100))
-        filemenu.add_command(label="1000", command=lambda: self.set_iterations(1000))
-        filemenu.add_command(label="5000", command=lambda: self.set_iterations(5000))
-
-        self.write("use the \"File\" menu to open a data file")
-
+        #self.write("use the \"File\" menu to select a directory")
+        self.write("Please login (see \"Login\" button below)")
         self.frame = frame
+        self.collection = ''
+        self.user = ''
+
+    def get_user(self):
+        eid = askstring('enter your EID','EID')
+
+    def login_user(self):
+        eid = askstring('enter your EID','EID')
+        password = askstring('enter your Web Service Key','Web Service Key')
+
+        url = PROTOCOL+'://'+DASE_HOST+DASE_BASE.rstrip('/')+'/user/'+eid+'/collections.json?auth=service'
+
+        # create a password manager
+        password_mgr = urllib2.HTTPPasswordMgrWithDefaultRealm()
+        
+        # Add the username and password.
+        # If we knew the realm, we could use it instead of ``None``.
+        top_level_url = PROTOCOL+'://'+DASE_HOST+DASE_BASE.rstrip('/')
+        password_mgr.add_password(None, top_level_url, eid, password)
+        
+        handler = urllib2.HTTPBasicAuthHandler(password_mgr)
+        
+        # create "opener" (OpenerDirector instance)
+        opener = urllib2.build_opener(handler)
+        
+        # Now all calls to urllib2.urlopen use our opener.
+        urllib2.install_opener(opener)
+
+        response = urllib2.urlopen(url)
+
+        json_colls = response.read()
+        pycolls = json.loads(json_colls)
+        self.pycolls = pycolls
+        filemenu = Menu(self.menu)
+        self.menu.add_cascade(label="Collections", menu=filemenu)
+        for c in pycolls:
+            filemenu.add_command(label=pycolls[c]['collection_name'], command=lambda col=c: self.set_collection(col))
+        self.write("Select a collection from the \"Collections\" menu above",True)
+        self.user = eid
+                
+    def set_collection(self,ascii_id):
+        self.collection = ascii_id
+        self.write("Use the \"Open...\" command in the \"File\" menu \nto select a directory of files to upload to \nthe  * "+self.pycolls[ascii_id]['collection_name']+" *  Collection\n",True)
 
     def write(self,text,delete_text=False):
         if delete_text:
@@ -119,15 +149,14 @@ class Application():
     def clear(self):
         self.report.settext('')
 
-    def set_iterations(self,num):
-        self.iterations = num 
-        if self.run_button:
-            self.run_button.pack_forget()
-        self.run_button = Button(self.frame, text="Run Tally with "+str(num)+" iterations",command=self.run_tally)
-        self.run_button.pack(side=LEFT)
-    
     def get_data_file(self):
         self.clear()
+        if not self.user:
+            self.write('ERROR: please Login\n',True)
+            return
+        if not self.collection:
+            self.write('ERROR: please select a collection\n',True)
+            return
         self.write('processing file...')
         dirpath = askdirectory(title="Select A Folder")
         for f in os.listdir(dirpath):
