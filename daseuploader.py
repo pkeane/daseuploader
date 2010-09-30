@@ -12,6 +12,7 @@ from Tkinter import *
 from tkSimpleDialog import askstring
 import base64
 import copy
+import fnmatch
 import httplib
 import md5
 import mimetypes
@@ -83,12 +84,13 @@ class ScrolledText(Frame):
     def addtext(self,text):
         self.text.insert(END,text+"\n")
         self.text.focus()                                # save user a click
+        self.text.yview_pickplace("end")
     def settext(self, text='', file=None):
         if file: 
             text = open(file, 'r').read()
         self.text.delete('1.0', END)                     # delete current text
         self.text.insert('1.0', text)                    # add at line 1, col 0
-#        self.text.mark_set(INSERT, '1.0')                # set insert cursor
+        self.text.mark_set(INSERT, '1.0')                # set insert cursor
         self.text.focus()                                # save user a click
     def gettext(self):                                   # returns a string
         return self.text.get('1.0', END+'-1c')           # first through last
@@ -96,6 +98,7 @@ class ScrolledText(Frame):
 class Application():
     def __init__(self, master):
 
+        self.root = master
         frame = Frame(master)
         frame.pack(fill=BOTH,padx=2,pady=2)
 
@@ -118,6 +121,9 @@ class Application():
 
         self.clear_button = Button(frame, text="Clear",command=self.clear)
         self.clear_button.pack(side=RIGHT)
+
+        #self.abort_button = Button(frame, text="Abort Upload",command=self.abort_upload)
+        #self.abort_button.pack(side=LEFT)
 
         #self.write("use the \"File\" menu to select a directory")
         self.write("Please login\n")
@@ -201,7 +207,7 @@ class Application():
             "Content-Type":mime_type,
             "Content-Length":str(len(self.body)),
             "Authorization":auth,
-            "Slug":filename,
+            "Title":filename,
         };
 
         md5sum = md5.new(self.body).hexdigest()
@@ -217,27 +223,52 @@ class Application():
             h = httplib.HTTPConnection(DASE_HOST,80)
         return h
 
-    def get_directory(self):
-        self.clear()
+    def abort_upload(self):
+        self.root.destroy()
+
+    def upload_files(self):
+        self.write('processing files...')
         if not self.user:
             self.write('ERROR: please Login\n',True)
             return
         if not self.collection:
             self.write('ERROR: please select a collection\n',True)
             return
-        self.write('processing file...')
+        for file in self.files:
+            (mime_type,enc) = mimetypes.guess_type(self.dirpath+file)
+            self.write("uploading "+file)
+            self.frame.update_idletasks()
+            status = self.postFile(self.dirpath,file,DASE_HOST,self.collection,mime_type,self.user,self.password)
+            if (201 == status):
+                self.write("server says... "+str(status)+" OK!!\n")
+            else:
+                self.write("problem with "+file+"("+str(status)+")\n")
+            self.frame.update_idletasks()
+
+    def get_directory(self):
+        self.clear()
         home = os.getenv('USERPROFILE') or os.getenv('HOME')
         dirpath = askdirectory(initialdir=home,title="Select A Folder")
-        for f in os.listdir(dirpath):
-            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
-            if mime_type and mime_type in MIMETYPES:
-                self.write(mime_type)
-                self.write("uploading "+f)
-                status = self.postFile(dirpath,f,DASE_HOST,self.collection,mime_type,self.user,self.password)
-                if (201 == status):
-                    self.write("server says... "+str(status)+" OK!!\n")
-                else:
-                    self.write("problem with "+f+"("+str(status)+")\n")
+        self.files = []
+#        for f in os.listdir(dirpath):
+#            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
+#            if mime_type and mime_type in MIMETYPES:
+#                self.files.append(f)
+        for path, subdirs, _files in os.walk(dirpath):
+            for f in _files:
+                if not fnmatch.fnmatch(f,'.*'):
+                    fullpath = os.path.join(path,f)
+                    (mime_type,enc) = mimetypes.guess_type(fullpath)
+                    if mime_type and mime_type in MIMETYPES:
+                        self.files.append(fullpath.replace(dirpath+'/',''))
+
+        self.dirpath = dirpath
+
+        for file in self.files:
+            self.write(file)
+
+        button = Button(self.frame, text="upload "+str(len(self.files))+" files",command=self.upload_files)
+        button.pack(side=LEFT)
 
 if __name__ == "__main__":
     root = Tk()
