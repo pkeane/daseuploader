@@ -223,38 +223,42 @@ class Application():
     def abort_upload(self):
         self.root.destroy()
 
-    def get_directory(self):
-        self.clear()
-
+    def upload_files(self):
+        self.write('processing files...')
         if not self.user:
             self.write('ERROR: please Login\n',True)
             return
         if not self.collection:
             self.write('ERROR: please select a collection\n',True)
             return
-        self.write('processing file...')
-        home = os.getenv('USERPROFILE') or os.getenv('HOME')
-        dirpath = askdirectory(initialdir=home,title="Select A Folder")
-        files = []
-        for f in os.listdir(dirpath):
-            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
-            if mime_type and mime_type in MIMETYPES:
-                files.append(f)
-
-        #work on confirmation
-        #confirm = Toplevel()
-        #button = Button(confirm, text="upload "+str(len(files))+" files",command=self.clear)
-        #button.pack(padx=5,pady=5)
-
-        for file in files:
+        for file in self.files:
+            (mime_type,enc) = mimetypes.guess_type(self.dirpath+file)
             self.write("uploading "+file)
             self.frame.update_idletasks()
-            status = self.postFile(dirpath,file,DASE_HOST,self.collection,mime_type,self.user,self.password)
+            status = self.postFile(self.dirpath,file,DASE_HOST,self.collection,mime_type,self.user,self.password)
             if (201 == status):
                 self.write("server says... "+str(status)+" OK!!\n")
             else:
                 self.write("problem with "+file+"("+str(status)+")\n")
             self.frame.update_idletasks()
+
+    def get_directory(self):
+        self.clear()
+        home = os.getenv('USERPROFILE') or os.getenv('HOME')
+        dirpath = askdirectory(initialdir=home,title="Select A Folder")
+        self.files = []
+        for f in os.listdir(dirpath):
+            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
+            if mime_type and mime_type in MIMETYPES:
+                self.files.append(f)
+
+        self.dirpath = dirpath
+
+        for file in self.files:
+            self.write(file)
+
+        button = Button(self.frame, text="upload "+str(len(self.files))+" files",command=self.upload_files)
+        button.pack(side=LEFT)
 
 if __name__ == "__main__":
     root = Tk()
