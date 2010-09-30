@@ -10,6 +10,7 @@ from Tkinter import *
 from tkSimpleDialog import askstring
 import base64
 import copy
+import fnmatch
 import httplib
 import md5
 import mimetypes
@@ -247,10 +248,17 @@ class Application():
         home = os.getenv('USERPROFILE') or os.getenv('HOME')
         dirpath = askdirectory(initialdir=home,title="Select A Folder")
         self.files = []
-        for f in os.listdir(dirpath):
-            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
-            if mime_type and mime_type in MIMETYPES:
-                self.files.append(f)
+#        for f in os.listdir(dirpath):
+#            (mime_type,enc) = mimetypes.guess_type(dirpath+f)
+#            if mime_type and mime_type in MIMETYPES:
+#                self.files.append(f)
+        for path, subdirs, _files in os.walk(dirpath):
+            for f in _files:
+                if not fnmatch.fnmatch(f,'.*'):
+                    fullpath = os.path.join(path,f)
+                    (mime_type,enc) = mimetypes.guess_type(fullpath)
+                    if mime_type and mime_type in MIMETYPES:
+                        self.files.append(fullpath.replace(dirpath+'/',''))
 
         self.dirpath = dirpath
 
